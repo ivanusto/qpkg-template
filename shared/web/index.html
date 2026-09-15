@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Starting...</title>
+<style>
+  :root{
+    --bg:#0f1117; --card:#181c26; --card2:#1e2330; --text:#e8eaf0; --muted:#9aa3b5;
+    --accent:#3ecf8e; --ok:#3ecf8e; --warn:#ffb020; --err:#ff5d5d; --border:#2a3042;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:"Segoe UI","Noto Sans TC",system-ui,sans-serif;background:var(--bg);color:var(--text);line-height:1.65}
+  .wrap{max-width:820px;margin:0 auto;padding:32px 20px 64px}
+  header{display:flex;align-items:center;gap:16px;margin-bottom:24px;flex-wrap:wrap}
+  h1{font-size:22px;margin:0;flex-grow:1}
+  h1 small{display:block;font-size:13px;font-weight:400;color:var(--muted)}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px 22px;margin-bottom:18px}
+  .card h2{font-size:16px;margin:0 0 12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .pill{display:inline-block;padding:3px 12px;border-radius:999px;font-size:13px;font-weight:600}
+  .pill.ok{background:rgba(62,207,142,.15);color:var(--ok)}
+  .pill.warn{background:rgba(255,176,32,.15);color:var(--warn)}
+  .pill.err{background:rgba(255,93,93,.15);color:var(--err)}
+  .tbl{overflow-x:auto}
+  table{width:100%;border-collapse:collapse;font-size:14px;table-layout:fixed}
+  td{padding:6px 0;vertical-align:top}
+  td:first-child{color:var(--muted);width:34%;padding-right:12px}
+  td+td{overflow-wrap:anywhere;word-break:break-all}
+  code{background:var(--card2);border:1px solid var(--border);border-radius:6px;padding:1px 6px;font-size:13px;color:#a8f0cf;word-break:break-all}
+  pre{background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:14px;overflow-x:auto;font-size:13px;color:#a8f0cf;max-height:240px}
+  .muted{color:var(--muted);font-size:13px}
+  .lang{display:flex;gap:4px;font-size:12px;background:var(--card2);border:1px solid var(--border);padding:3px;border-radius:18px}
+  .lang span{color:var(--muted);cursor:pointer;padding:3px 10px;border-radius:14px}
+  .lang span.active{background:var(--accent);color:#0f1117;font-weight:600}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1><span id="app-name">QPKG</span> <small data-t="subtitle"></small></h1>
+    <div class="lang"><span id="btn-en">English</span><span id="btn-zh">繁體中文</span></div>
+  </header>
+
+  <div class="card">
+    <h2><span data-t="status"></span> <span id="state" class="pill warn">...</span></h2>
+    <div class="tbl"><table id="info"></table></div>
+    <div id="pull-box" hidden>
+      <p class="muted" data-t="progress"></p>
+      <pre id="pull-pre"></pre>
+    </div>
+    <p class="muted" data-t="auto"></p>
+  </div>
+
+  <div class="card">
+    <h2 data-t="whyTitle"></h2>
+    <p style="font-size:14px" data-t="why"></p>
+  </div>
+
+  <div class="card">
+    <h2 data-t="cmdTitle"></h2>
+    <pre id="cmds"></pre>
+  </div>
+</div>
+
+<script>
+(function(){
+  var T = {
+    en: {
+      subtitle: "Thin QPKG · Container Station",
+      status: "Current status",
+      progress: "Image download progress (updates every 5 s):",
+      auto: "This page updates every 5 seconds. When the app is ready it replaces this page at the same URL.",
+      whyTitle: "Why am I seeing this page?",
+      why: "This package ships only management scripts. After installation Container Station downloads the pinned container image in the background. Until the app is up, this lightweight page borrows the web port so you can follow the progress.",
+      cmdTitle: "Maintenance commands (SSH, as admin)",
+      container: "Container", image: "Image", digest: "Image pin", port: "Web port",
+      tz: "Time zone", updated: "Updated at", empty: "(not set)",
+      connecting: "Starting the app (the first launch can take a few minutes)...",
+      cmds: ["status           # check status", "restart          # apply configuration changes", "update --check   # has the pinned tag moved upstream?", "update           # apply a changed pin", "diag             # collect diagnostics for a bug report"],
+      states: {
+        "running": ["ok", "Running"], "starting": ["warn", "Starting..."], "stopped": ["warn", "Stopped"],
+        "downloading-image": ["warn", "Downloading image..."],
+        "waiting-for-container-station": ["warn", "Waiting for Container Station..."],
+        "pull-failed": ["err", "Download failed, run diag"],
+        "no-container-engine": ["err", "Container Station not found"], "error": ["err", "Error, see the log"]
+      },
+      digests: {"pinned-ok": "pinned, verified", "pinned-mismatch": "does not match the pin", "unpinned": "floating tag, not pinned", "missing": "not downloaded yet", "unknown": "unknown"}
+    },
+    zh: {
+      subtitle: "薄殼 QPKG · Container Station",
+      status: "目前狀態",
+      progress: "映像檔下載進度（每 5 秒更新）：",
+      auto: "此頁每 5 秒更新一次。應用程式就緒後，會在同一個網址取代這個畫面。",
+      whyTitle: "為什麼會看到這個畫面？",
+      why: "本套件只包含管理腳本。安裝後由 Container Station 在背景下載鎖定版本的容器映像檔。應用程式啟動之前，這個輕量頁面會暫時佔用網頁埠，讓你確認進度。",
+      cmdTitle: "維護指令（SSH，以管理員執行）",
+      container: "容器", image: "映像檔", digest: "版本鎖定", port: "網頁埠",
+      tz: "時區", updated: "更新時間", empty: "（未設定）",
+      connecting: "應用程式啟動中（首次啟動可能需要數分鐘）…",
+      cmds: ["status           # 檢視狀態", "restart          # 套用設定變更", "update --check   # 上游的 tag 是否已經換版", "update           # 套用變更後的鎖定版本", "diag             # 收集回報問題用的診斷資訊"],
+      states: {
+        "running": ["ok", "執行中"], "starting": ["warn", "啟動中…"], "stopped": ["warn", "已停止"],
+        "downloading-image": ["warn", "映像檔下載中…"],
+        "waiting-for-container-station": ["warn", "等待 Container Station 就緒…"],
+        "pull-failed": ["err", "下載失敗，請執行 diag"],
+        "no-container-engine": ["err", "找不到 Container Station"], "error": ["err", "發生錯誤，請查看記錄"]
+      },
+      digests: {"pinned-ok": "已鎖定並驗證", "pinned-mismatch": "與鎖定值不符", "unpinned": "浮動 tag，未鎖定", "missing": "尚未下載", "unknown": "未知"}
+    }
+  };
+
+  var lang;
+  try { lang = localStorage.getItem("qpkg_status_lang"); } catch (e) {}
+  if (!lang) {
+    var nav = (navigator.languages && navigator.languages[0]) || navigator.language || "";
+    lang = String(nav).toLowerCase().indexOf("zh") === 0 ? "zh" : "en";
+  }
+  var last = null;
+  var healthPath = "/";
+
+  function el(id){ return document.getElementById(id); }
+
+  function row(tbl, label, value){
+    var tr = document.createElement("tr");
+    var a = document.createElement("td"); a.textContent = label;
+    var b = document.createElement("td"); b.textContent = value || T[lang].empty;
+    tr.appendChild(a); tr.appendChild(b); tbl.appendChild(tr);
+  }
+
+  function render(){
+    var t = T[lang];
+    document.documentElement.lang = lang === "zh" ? "zh-Hant" : "en";
+    el("btn-en").className = lang === "en" ? "active" : "";
+    el("btn-zh").className = lang === "zh" ? "active" : "";
+    var nodes = document.querySelectorAll("[data-t]");
+    for (var i = 0; i < nodes.length; i++) nodes[i].textContent = t[nodes[i].getAttribute("data-t")];
+
+    var script = (last && last.script) || "/etc/init.d/<script>.sh";
+    el("cmds").textContent = t.cmds.map(function(c){ return "sudo " + script + " " + c; }).join("\n");
+
+    var tbl = el("info");
+    tbl.textContent = "";
+    if (!last) return;
+    el("app-name").textContent = last.app;
+    document.title = last.app;
+    var m = t.states[last.state] || ["warn", last.state];
+    el("state").className = "pill " + m[0];
+    el("state").textContent = m[1];
+    (last.containers || []).forEach(function(c){
+      row(tbl, t.container + " (" + c.id + ")", c.name);
+      row(tbl, t.image, c.image);
+      row(tbl, t.digest, t.digests[c.digest] || c.digest);
+    });
+    row(tbl, t.port, last.web_port);
+    (last.fields || []).forEach(function(f){ row(tbl, lang === "zh" ? f.zh : f.en, f.value); });
+    row(tbl, t.tz, last.tz);
+    row(tbl, t.updated, last.updated_at);
+  }
+
+  function setLang(l){
+    lang = l;
+    try { localStorage.setItem("qpkg_status_lang", l); } catch (e) {}
+    render();
+  }
+  el("btn-en").onclick = function(){ setLang("en"); };
+  el("btn-zh").onclick = function(){ setLang("zh"); };
+
+  function progress(show){
+    var box = el("pull-box");
+    if (!show) { box.hidden = true; return; }
+    fetch("pull-progress.txt", {cache: "no-store"}).then(function(r){ return r.ok ? r.text() : ""; })
+      .then(function(txt){ if (txt) { box.hidden = false; el("pull-pre").textContent = txt; } })
+      .catch(function(){});
+  }
+
+  function load(){
+    fetch("status.json", {cache: "no-store"}).then(function(r){
+      if (!r.ok) throw new Error(r.status);
+      return r.json();
+    }).then(function(s){
+      last = s;
+      if (s.health_path) healthPath = s.health_path;
+      render();
+      progress(s.state === "downloading-image" || s.state === "pull-failed");
+    }).catch(function(){
+      // The status page is gone, but the app may still be starting (a
+      // first launch can run migrations for minutes) and the port refuses
+      // connections meanwhile. Reloading now would strand the browser on
+      // an error page that never retries, so reload only once the app's
+      // health path answers.
+      el("state").className = "pill warn";
+      el("state").textContent = T[lang].connecting;
+      fetch(healthPath, {cache: "no-store"}).then(function(r){
+        if (r.ok) window.location.reload();
+      }).catch(function(){});
+    });
+  }
+
+  render();
+  load();
+  setInterval(load, 5000);
+})();
+</script>
+</body>
+</html>

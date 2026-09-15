@@ -1,0 +1,147 @@
+#!/bin/sh
+# shellcheck disable=SC2016,SC2034 # check() evals its single-quoted condition later
+# Lifecycle test against the local docker daemon, with QTS commands
+# stubbed out. Uses its own container, network and port names so it does
+# not touch anything else on the machine. The demo image is removed first
+# so the background download path is exercised.
+#
+# Usage: tests/lifecycle.sh        (TEST_PORT=18190 by default)
+set -u
+
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
+PORT="${TEST_PORT:-18190}"
+PORT2=$((PORT + 1))
+PREFIX="qpkgtpl-test"
+WORK=$(mktemp -d "${TMPDIR:-/tmp}/qpkg-template-test.XXXXXX")
+PASS=0
+FAIL=0
+
+export QPKG_ROOT_OVERRIDE="$WORK/root"
+export QPKG_CONF="$WORK/qpkg.conf"
+export QTS_SBIN="$ROOT/tests/stubs"
+export TEST_EVENT_LOG="$WORK/event.log"
+
+SCRIPT=$(sed -n 's/^SCRIPT_NAME="\(.*\)"/\1/p' "$ROOT"/shared/*.sh | head -n 1)
+QPKG_NAME=$(sed -n 's/^QPKG_NAME="\(.*\)"/\1/p' "$ROOT/qpkg.cfg")
+APP="$QPKG_ROOT_OVERRIDE/$SCRIPT"
+CONF_FILE="$QPKG_ROOT_OVERRIDE/$(sed -n 's/^CONF_NAME="\(.*\)"/\1/p' "$ROOT"/shared/*.sh | head -n 1)"
+IMAGE=$(sed -n 's/^APP_IMAGE=//p' "$ROOT/shared/images.lock")
+C_APP="$PREFIX-app"
+NET="$PREFIX-net"
+
+ok()   { PASS=$((PASS + 1)); echo "  ok   $1"; }
+bad()  { FAIL=$((FAIL + 1)); echo "  FAIL $1"; }
+check() { if eval "$2"; then ok "$1"; else bad "$1"; fi; }
+
+state() { sed -n 's/.*"state": "\([^"]*\)".*/\1/p' "$QPKG_ROOT_OVERRIDE/web/status.json" 2>/dev/null; }
+created() { docker inspect -f '{{.Created}}' "$1" 2>/dev/null; }
+http_ok() { curl -fsS -o /dev/null --max-time 3 "http://127.0.0.1:$1$2"; }
+
+wait_for() {
+    # $1 = description, $2 = condition, $3 = timeout seconds
+    W=0
+    while ! eval "$2"; do
+        W=$((W + 1))
+        [ "$W" -ge "$3" ] && { bad "$1 (timed out after $3 s)"; return 1; }
+        sleep 1
+    done
+    ok "$1"
+}
+
+cleanup() {
+    docker rm -f "$C_APP" "$C_APP-landing" >/dev/null 2>&1
+    docker network rm "$NET" >/dev/null 2>&1
+    rm -rf "$WORK"
+}
+trap cleanup EXIT INT TERM
+
+echo "== setup ($WORK)"
+cleanup
+mkdir -p "$WORK" "$QPKG_ROOT_OVERRIDE"
+cp -R "$ROOT/shared/." "$QPKG_ROOT_OVERRIDE/"
+chmod +x "$APP"
+cat > "$QPKG_CONF" <<EOF
+[$QPKG_NAME]
+Name = $QPKG_NAME
+Version = test
+Enable = TRUE
+Install_Path = $QPKG_ROOT_OVERRIDE
+Web_Port = 8190
+EOF
+cp "$QPKG_ROOT_OVERRIDE"/*.conf.default "$CONF_FILE"
+cat >> "$CONF_FILE" <<EOF
+APP_CONTAINER_NAME="$C_APP"
+NETWORK_NAME="$NET"
+WEB_PORT="$PORT"
+TZ="UTC"
+STOP_TIMEOUT="1"
+EOF
+docker rmi "$IMAGE" >/dev/null 2>&1
+docker image inspect "$IMAGE" >/dev/null 2>&1 && echo "  note: $IMAGE still present (in use elsewhere); download path not exercised"
+
+echo "== 1. first start downloads in the background"
+"$APP" start 2>/dev/null
+check "start returns with downloading-image or running" '[ "$(state)" = downloading-image ] || [ "$(state)" = running ]'
+if [ "$(state)" = downloading-image ]; then
+    wait_for "status page answers on port $PORT" 'http_ok "$PORT" /status.json' 30
+fi
+wait_for "state becomes running" '[ "$(state)" = running ]' 180
+wait_for "app answers on port $PORT" 'http_ok "$PORT" /' 30
+check "status page container is gone" '! docker inspect "$C_APP-landing" >/dev/null 2>&1'
+check "status.json reports the pin as verified" 'grep -q "\"digest\": \"pinned-ok\"" "$QPKG_ROOT_OVERRIDE/web/status.json"'
+check "fingerprint recorded" '[ -s "$QPKG_ROOT_OVERRIDE/.conf-$C_APP" ]'
+check "App Center port synced" '[ "$("$QTS_SBIN/getcfg" "$QPKG_NAME" Web_Port -f "$QPKG_CONF")" = "$PORT" ]'
+check "status exits 0" '"$APP" status >/dev/null'
+
+echo "== 2. restart without changes reuses the container"
+C1=$(created "$C_APP")
+"$APP" restart 2>/dev/null
+check "running after restart" 'docker inspect -f "{{.State.Running}}" "$C_APP" | grep -q true'
+check "container not recreated" '[ "$(created "$C_APP")" = "$C1" ]'
+
+echo "== 3. changed setting recreates the container"
+sed -i "s/^WEB_PORT=.*/WEB_PORT=\"$PORT2\"/" "$CONF_FILE"
+"$APP" restart 2>/dev/null
+check "container recreated" '[ "$(created "$C_APP")" != "$C1" ]'
+wait_for "app answers on new port $PORT2" 'http_ok "$PORT2" /' 30
+check "App Center port follows" '[ "$("$QTS_SBIN/getcfg" "$QPKG_NAME" Web_Port -f "$QPKG_CONF")" = "$PORT2" ]'
+
+echo "== 4. update with a pinned digest changes nothing"
+C2=$(created "$C_APP")
+"$APP" update 2>/dev/null
+RC=$?
+check "update exits 0" '[ "$RC" -eq 0 ]'
+check "container not recreated by update" '[ "$(created "$C_APP")" = "$C2" ]'
+OUT=$("$APP" update --check 2>&1)
+check "update --check reports the pin" 'echo "$OUT" | grep -q "pinned"'
+check "update --check leaves the container alone" '[ "$(created "$C_APP")" = "$C2" ]'
+
+echo "== 5. floating tag is flagged"
+echo "APP_IMAGE=\"${IMAGE%@*}\"" >> "$CONF_FILE"
+"$APP" restart 2>/dev/null
+check "status.json reports unpinned" 'grep -q "\"digest\": \"unpinned\"" "$QPKG_ROOT_OVERRIDE/web/status.json"'
+check "warning logged" 'grep -q "floating tag" "$QPKG_ROOT_OVERRIDE/logs/"*.log'
+sed -i '/^APP_IMAGE=/d' "$CONF_FILE"
+"$APP" restart 2>/dev/null
+
+echo "== 6. diag"
+OUT=$("$APP" diag 2>&1)
+RC=$?
+check "diag exits 0" '[ "$RC" -eq 0 ]'
+for S in package docker "registry DNS" images containers network configuration app; do
+    check "diag has section '$S'" 'echo "$OUT" | grep -q -- "--- $S ---"'
+done
+
+echo "== 7. stop and remove"
+"$APP" stop 2>/dev/null
+check "stopped" '! "$APP" status >/dev/null'
+check "state stopped" '[ "$(state)" = stopped ]'
+"$APP" remove 2>/dev/null
+check "container removed" '! docker inspect "$C_APP" >/dev/null 2>&1'
+check "network removed" '! docker network inspect "$NET" >/dev/null 2>&1'
+check "fingerprint removed" '[ ! -f "$QPKG_ROOT_OVERRIDE/.conf-$C_APP" ]'
+check "configuration kept" '[ -f "$CONF_FILE" ]'
+
+echo
+echo "passed $PASS, failed $FAIL"
+[ "$FAIL" -eq 0 ]

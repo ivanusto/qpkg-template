@@ -1,0 +1,41 @@
+# ============================================================
+#  My App QPKG configuration
+#  File location on the NAS: <QPKG install dir>/myapp.conf
+#  Apply changes with:  sudo /etc/init.d/myapp.sh restart
+#  (or restart the app from App Center)
+#  Only containers whose settings changed are recreated.
+# ============================================================
+
+# --- Image ------------------------------------------------------
+# The pinned image ships in images.lock next to this file. Set a value
+# here only to override it. Keep the @sha256 digest: a bare tag still
+# works, but is reported as "unpinned" and may change under you.
+#APP_IMAGE="traefik/whoami:v1.12.0@sha256:c4717a8d1f0134a7444e24f881160e033991f23027c6c5a9a3f8fd22e70d1d44"
+
+# --- App --------------------------------------------------------
+#APP_CONTAINER_NAME="myapp"
+
+# Port exposed on the NAS. The App Center icon link follows this value.
+#WEB_PORT="8190"
+
+# Name the demo app reports back (traefik/whoami --name).
+#APP_NAME_FIELD="QNAP"
+
+# Extra "docker run" arguments (advanced). Word-split, so no spaces
+# inside a single argument.
+#APP_EXTRA_ARGS=""
+
+# --- Shared -----------------------------------------------------
+# Private bridge network for the app's containers.
+#NETWORK_NAME="myapp-net"
+
+# IANA timezone. Auto-detected from QTS when unset.
+#TZ="Asia/Taipei"
+
+# Seconds to wait for a clean container shutdown.
+#STOP_TIMEOUT="30"
+
+# Seconds to wait for Container Station at boot before giving up. The
+# start is deferred in the background meanwhile, so this never delays
+# the QTS boot sequence.
+#CS_WAIT_TIMEOUT="900"

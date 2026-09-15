@@ -1,0 +1,71 @@
+# shellcheck shell=sh disable=SC2034 # PKG_*_REMOVE are read by qbuild
+# QPKG installation routines (QDK)
+#
+# Thin shell: no image is bundled. Right after installation the service
+# script asks Container Station to download the pinned image in the
+# background, so App Center returns immediately.
+#
+# The uninstall blocks below are embedded into a separate uninstall
+# script, so they cannot see variables defined elsewhere in this file.
+# Names are written out literally; scripts/new-app.sh rewrites them.
+
+######### Uninstall routines #########
+
+PKG_PRE_REMOVE="{
+    # Remove the containers and the private network. Data stays on disk:
+    # removing a package is not the same as destroying its data.
+    ${SYS_QPKG_DIR}/myapp.sh remove >/dev/null 2>&1 || true
+}"
+
+PKG_MAIN_REMOVE="{
+    true
+}"
+
+PKG_POST_REMOVE="{
+    /sbin/write_log \"[MyApp] Removed. Application data was kept on disk; delete the MyApp data folder manually if you no longer need it.\" 4
+}"
+
+######### Install routines #########
+
+pkg_init(){
+    true
+}
+
+pkg_check_requirement(){
+    # QPKG_REQUIRE already checks Container Station; fail early with a
+    # clear message instead of a missing docker CLI later on.
+    CS_DIR=$(/sbin/getcfg container-station Install_Path -f /etc/config/qpkg.conf 2>/dev/null)
+    if [ -z "$CS_DIR" ]; then
+        err_log "Container Station is required but not installed. Please install Container Station from App Center first."
+    fi
+}
+
+pkg_pre_install(){
+    true
+}
+
+pkg_install(){
+    true
+}
+
+pkg_post_install(){
+    # Keep the user's configuration across reinstalls and upgrades.
+    if [ ! -f "${SYS_QPKG_DIR}/myapp.conf" ]; then
+        cp "${SYS_QPKG_DIR}/myapp.conf.default" "${SYS_QPKG_DIR}/myapp.conf"
+    fi
+    chmod +x "${SYS_QPKG_DIR}/myapp.sh"
+    mkdir -p "${SYS_QPKG_DIR}/logs"
+
+    # Warn, don't abort, if the configured port is taken. Read it from the
+    # (possibly kept) configuration rather than assuming the default.
+    WEB_PORT=$(. "${SYS_QPKG_DIR}/myapp.conf" >/dev/null 2>&1; echo "${WEB_PORT:-8190}")
+    if netstat -lnt 2>/dev/null | grep -q ":${WEB_PORT} "; then
+        /sbin/write_log "[MyApp] Port ${WEB_PORT} is already in use. Set WEB_PORT in ${SYS_QPKG_DIR}/myapp.conf to a free port, then restart the app." 2
+    fi
+
+    # Detached (setsid) background download, so it survives App Center
+    # reaping this script's process group.
+    "${SYS_QPKG_DIR}/myapp.sh" bgpull
+
+    /sbin/write_log "[MyApp] Installed. Container Station is downloading the image in the background; open the app from App Center to watch progress." 4
+}
