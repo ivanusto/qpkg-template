@@ -74,6 +74,7 @@ jobs:
             build/*.md5
             build/images.lock
             build/LICENSE
+            build/NOTICE.md
             build/SHA256SUMS
 
       - name: Release (on tag)
@@ -85,5 +86,6 @@ jobs:
             build/*.md5
             build/images.lock
             build/LICENSE
+            build/NOTICE.md
             build/SHA256SUMS
           generate_release_notes: true

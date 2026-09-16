@@ -63,9 +63,40 @@ find . -type f \
         echo "updated $F"
     done
 
+# NOTICE.md: the upstream and trademark sections describe the demo app.
+# Replace them with placeholders so they cannot ship unedited.
+if [ -f NOTICE.md ]; then
+    awk '
+        /<!-- upstream:start -->/ {
+            print; skip = 1
+            print "## 上游軟體"
+            print ""
+            print "本套件僅自動化部署官方未經修改的 <image 名稱> image，不重新散布 <上游軟體>。實際使用的版本記錄在 `shared/images.lock`。<上游軟體> 依其自身授權（<授權名稱>，<連結>）提供，使用本套件即表示接受該授權。"
+            print ""
+            print "狀態頁使用官方未經修改的 busybox image（GPL-2.0），同樣不重新散布。"
+            print ""
+            print "## 商標"
+            print ""
+            print "<上游名稱> 及其 logo 為 <上游組織> 的商標。QNAP、QTS、QuTS hero 與 Container Station 為 QNAP Systems, Inc. 的商標。"
+            next
+        }
+        /<!-- upstream-en:start -->/ {
+            print; skip = 1
+            print "**Upstream software.** The package only automates the deployment of the official, unmodified <image> image and does not redistribute <upstream software>. The exact version is recorded in `shared/images.lock`. <upstream software> is provided under its own license (<license>, <link>); using this package means accepting it. The status page uses the official, unmodified busybox image (GPL-2.0), likewise not redistributed."
+            print ""
+            print "**Trademarks.** <upstream name> and its logo are trademarks of <upstream organization>. QNAP, QTS, QuTS hero and Container Station are trademarks of QNAP Systems, Inc."
+            next
+        }
+        /<!-- upstream(-en)?:end -->/ { skip = 0 }
+        !skip { print }
+    ' NOTICE.md > NOTICE.md.tmp && mv NOTICE.md.tmp NOTICE.md
+    echo "updated NOTICE.md (fill in the <...> placeholders)"
+fi
+
 echo
 echo "Done. Next:"
 echo "  1. shared/$SLUG.sh: CONTAINERS, the app_* hooks, HEALTH_PATH"
 echo "  2. shared/images.lock: scripts/pin-images.sh APP_IMAGE=<repository>:<tag>"
 echo "  3. qpkg.cfg: QPKG_VER, QPKG_WEB_PORT, QPKG_SUMMARY; icons/"
-echo "  4. make test && make"
+echo "  4. NOTICE.md: origin, upstream license and trademarks"
+echo "  5. make test && make"

@@ -23,6 +23,8 @@ check "package_routines updated" 'grep -q "demo.sh remove" package_routines'
 LEFT=$(grep -rIl 'MyApp\|myapp\|My App' . --exclude='README*' --exclude=new-app.sh 2>/dev/null)
 check "no placeholder names left" '[ -z "$LEFT" ]'
 [ -z "$LEFT" ] || echo "$LEFT" | sed 's/^/       /'
+check "NOTICE.md upstream section is a placeholder" 'grep -q "<上游軟體>" NOTICE.md && grep -q "<upstream software>" NOTICE.md && ! grep -qi "whoami\|traefik" NOTICE.md'
+check "NOTICE.md keeps its markers" '[ "$(grep -c "<!-- upstream" NOTICE.md)" -eq 4 ]'
 check "pins still valid" 'sh scripts/check-pins.sh >/dev/null'
 check "second run refuses" '! sh scripts/new-app.sh Other "Other" other >/dev/null 2>&1'
 

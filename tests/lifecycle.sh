@@ -124,7 +124,28 @@ check "warning logged" 'grep -q "floating tag" "$QPKG_ROOT_OVERRIDE/logs/"*.log'
 sed -i '/^APP_IMAGE=/d' "$CONF_FILE"
 "$APP" restart 2>/dev/null
 
-echo "== 6. diag"
+echo "== 6. image imported with docker load (isolated network)"
+TAGREF="${IMAGE%@*}"
+"$APP" remove 2>/dev/null
+docker tag "$IMAGE" "$TAGREF"
+docker save -o "$WORK/image.tar" "$TAGREF"
+docker rmi -f "$IMAGE" "$TAGREF" >/dev/null 2>&1
+check "pinned reference gone before import" '! docker image inspect "$IMAGE" >/dev/null 2>&1'
+docker load -i "$WORK/image.tar" >/dev/null
+check "imported image has no repo digest" '[ -z "$(docker image inspect -f "{{range .RepoDigests}}{{.}}{{end}}" "$TAGREF")" ]'
+"$APP" start 2>/dev/null
+check "starts without downloading" '[ "$(state)" = running ]'
+check "container runs" 'docker inspect -f "{{.State.Running}}" "$C_APP" 2>/dev/null | grep -q true'
+check "status.json reports unverifiable" 'grep -q "\"digest\": \"unverifiable\"" "$QPKG_ROOT_OVERRIDE/web/status.json"'
+check "import warning logged" 'grep -q "cannot be verified" "$QPKG_ROOT_OVERRIDE/logs/"*.log'
+C3=$(created "$C_APP")
+docker pull -q "$IMAGE" >/dev/null
+"$APP" restart 2>/dev/null
+check "after pulling the pin, status is pinned-ok" 'grep -q "\"digest\": \"pinned-ok\"" "$QPKG_ROOT_OVERRIDE/web/status.json"'
+check "same image, container not recreated" '[ "$(created "$C_APP")" = "$C3" ]'
+docker rmi "$TAGREF" >/dev/null 2>&1
+
+echo "== 7. diag"
 OUT=$("$APP" diag 2>&1)
 RC=$?
 check "diag exits 0" '[ "$RC" -eq 0 ]'
@@ -132,7 +153,7 @@ for S in package docker "registry DNS" images containers network configuration a
     check "diag has section '$S'" 'echo "$OUT" | grep -q -- "--- $S ---"'
 done
 
-echo "== 7. stop and remove"
+echo "== 8. stop and remove"
 "$APP" stop 2>/dev/null
 check "stopped" '! "$APP" status >/dev/null'
 check "state stopped" '[ "$(state)" = stopped ]'

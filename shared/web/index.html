@@ -84,7 +84,7 @@
         "pull-failed": ["err", "Download failed, run diag"],
         "no-container-engine": ["err", "Container Station not found"], "error": ["err", "Error, see the log"]
       },
-      digests: {"pinned-ok": "pinned, verified", "pinned-mismatch": "does not match the pin", "unpinned": "floating tag, not pinned", "missing": "not downloaded yet", "unknown": "unknown"}
+      digests: {"pinned-ok": "pinned, verified", "pinned-mismatch": "does not match the pin", "unpinned": "floating tag, not pinned", "unverifiable": "imported image, pin cannot be verified", "missing": "not downloaded yet", "unknown": "unknown"}
     },
     zh: {
       subtitle: "薄殼 QPKG · Container Station",
@@ -105,7 +105,7 @@
         "pull-failed": ["err", "下載失敗，請執行 diag"],
         "no-container-engine": ["err", "找不到 Container Station"], "error": ["err", "發生錯誤，請查看記錄"]
       },
-      digests: {"pinned-ok": "已鎖定並驗證", "pinned-mismatch": "與鎖定值不符", "unpinned": "浮動 tag，未鎖定", "missing": "尚未下載", "unknown": "未知"}
+      digests: {"pinned-ok": "已鎖定並驗證", "pinned-mismatch": "與鎖定值不符", "unpinned": "浮動 tag，未鎖定", "unverifiable": "匯入的映像檔，無法驗證鎖定值", "missing": "尚未下載", "unknown": "未知"}
     }
   };
 

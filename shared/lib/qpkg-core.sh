@@ -177,8 +177,31 @@ ref_registry() {
     echo "registry-1.docker.io"
 }
 
+# Reference that resolves on the local daemon. An image imported with
+# "docker save" / "docker load" keeps its tag but loses RepoDigests, so a
+# repository:tag@sha256 reference no longer resolves (inspect and run both
+# report "No such image"). Fall back to the bare tag, but only when that
+# image carries no repo digest at all: a tag that was pulled at another
+# digest must never stand in for the pin.
+local_ref() {
+    "$DOCKER" image inspect "$1" >/dev/null 2>&1 && { echo "$1"; return 0; }
+    [ -n "$(ref_digest "$1")" ] || return 1
+    LR_TAG="${1%@*}"
+    case "${LR_TAG##*/}" in *:*) ;; *) return 1 ;; esac
+    "$DOCKER" image inspect "$LR_TAG" >/dev/null 2>&1 || return 1
+    [ -z "$("$DOCKER" image inspect -f '{{range .RepoDigests}}{{.}}{{end}}' "$LR_TAG" 2>/dev/null)" ] || return 1
+    echo "$LR_TAG"
+}
+
 image_present() {
-    "$DOCKER" image inspect "$1" >/dev/null 2>&1
+    local_ref "$1" >/dev/null
+}
+
+# Point <ID>_IMAGE at the locally resolvable reference. Call it inside the
+# same subshell as the app_run hook, so the configured value is untouched.
+use_local_image() {
+    ULI_REF=$(local_ref "$(cvar "$1" IMAGE)") || return 0
+    eval "$(id_upper "$1")_IMAGE=\"\$ULI_REF\""
 }
 
 # Digest the local image was pulled by, for the given repository.
@@ -193,11 +216,13 @@ local_repo_digest() {
     done
 }
 
-# pinned-ok | pinned-mismatch | unpinned | missing
+# pinned-ok | pinned-mismatch | unpinned | unverifiable | missing
 digest_state() {
-    image_present "$1" || { echo missing; return; }
+    DS_LOCAL=$(local_ref "$1") || { echo missing; return; }
     WANT=$(ref_digest "$1")
     [ -n "$WANT" ] || { echo unpinned; return; }
+    # Resolved only through the bare tag: imported, no digest to compare.
+    [ "$DS_LOCAL" = "$1" ] || { echo unverifiable; return; }
     [ "$(local_repo_digest "$1")" = "$WANT" ] && echo pinned-ok || echo pinned-mismatch
 }
 
@@ -223,6 +248,7 @@ report_digests() {
         case "$(digest_state "$IMG")" in
             unpinned)        log "Image for '$C' is a floating tag ($IMG); it can change on the next pull. Pin it with @sha256." 2 ;;
             pinned-mismatch) log "Image for '$C' does not match its pinned digest ($IMG; local $(local_repo_digest "$IMG"))." 1 ;;
+            unverifiable)    log "Image for '$C' was imported (docker load) and has no registry digest, so its pin cannot be verified ($IMG). Prefer a private registry." 2 ;;
         esac
     done
 }
@@ -423,7 +449,7 @@ save_fingerprint() {
 image_changed() {
     # $1 = container name, $2 = reference
     CUR=$("$DOCKER" inspect -f '{{.Image}}' "$1" 2>/dev/null)
-    NEW=$("$DOCKER" image inspect -f '{{.Id}}' "$2" 2>/dev/null)
+    NEW=$("$DOCKER" image inspect -f '{{.Id}}' "$(local_ref "$2")" 2>/dev/null)
     [ -n "$CUR" ] && [ -n "$NEW" ] && [ "$CUR" != "$NEW" ]
 }
 
@@ -483,7 +509,7 @@ run_container() {
     [ -n "$RC_DATA" ] && mkdir -p "$RC_DATA"
     [ "$RC_ID" = "$WEB_ID" ] && stop_landing
 
-    RC_OUT=$("app_run_$RC_ID" 2>&1 >/dev/null)
+    RC_OUT=$( { use_local_image "$RC_ID"; "app_run_$RC_ID"; } 2>&1 >/dev/null)
     RC=$?
     if [ $RC -ne 0 ] && name_conflict "$RC_OUT"; then
         "$DOCKER" start "$RC_NAME" >/dev/null 2>&1 && return 0
@@ -491,12 +517,12 @@ run_container() {
     if [ $RC -ne 0 ] && port_conflict "$RC_OUT"; then
         "$DOCKER" rm -f "$RC_NAME" >/dev/null 2>&1
         sleep 5
-        RC_OUT=$("app_run_$RC_ID" 2>&1 >/dev/null)
+        RC_OUT=$( { use_local_image "$RC_ID"; "app_run_$RC_ID"; } 2>&1 >/dev/null)
         RC=$?
     fi
     if [ $RC -ne 0 ] && has_func "app_run_fallback_$RC_ID"; then
         "$DOCKER" rm -f "$RC_NAME" >/dev/null 2>&1
-        RC_OUT=$("app_run_fallback_$RC_ID" "$RC_OUT" 2>&1 >/dev/null)
+        RC_OUT=$( { use_local_image "$RC_ID"; "app_run_fallback_$RC_ID" "$RC_OUT"; } 2>&1 >/dev/null)
         RC=$?
     fi
     if [ $RC -eq 0 ]; then

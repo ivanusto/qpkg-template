@@ -100,11 +100,13 @@ To upgrade:
 
 A floating tag (no `@sha256`) in the .conf file still works, but it logs a warning and shows as unpinned on the status page and in `diag`.
 
+Each container has one of five pin states: `pinned-ok` (the local image matches the pin), `pinned-mismatch` (it does not; logged as an error), `unpinned` (floating tag; warning), `unverifiable` (imported with `docker load`, no registry digest to compare; warning), `missing` (not downloaded yet).
+
 ## Verifying a release
 
 ```sh
 sha256sum -c SHA256SUMS
-gh attestation verify MyApp_0.1.0_x86_64.qpkg --repo ivanusto/qpkg-template
+gh attestation verify MyApp_0.1.1_x86_64.qpkg --repo ivanusto/qpkg-template
 ```
 
 `images.lock` is attached to the release as well, so you can see which image a package pins without unpacking it.
@@ -120,7 +122,7 @@ gh attestation verify MyApp_0.1.0_x86_64.qpkg --repo ivanusto/qpkg-template
 - QDK's installer compiles `qpkg_encrypt`. Without gcc the resulting `.qpkg` is rejected by App Center; the Dockerfile installs it.
 - The scripts run on busybox sh under QTS and must keep LF line endings; `.gitattributes` enforces this.
 - Only x86_64 is built. The payload is architecture-independent: for ARM add `QDK_DATA_DIR_ARM_64` to `qpkg.cfg` and build with `qbuild --build-arch arm_64`.
-- A thin package needs registry access from the NAS. On isolated networks use a private registry or import images with `docker save` / `docker load`.
+- A thin package needs registry access from the NAS. On isolated networks prefer a private registry, where digest verification keeps working. If you import with `docker save` / `docker load` instead, export by **tag** (`docker save repository:tag`; an image saved by digest loads back with no name at all). An imported image has no registry digest, so the package starts it by tag and reports `unverifiable`: the pin cannot be checked.
 
 ## License
 

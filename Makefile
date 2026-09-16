@@ -42,8 +42,8 @@ pin:
 	sh scripts/pin-images.sh
 
 release-files:
-	cp shared/images.lock LICENSE build/
-	cd build && sha256sum *.qpkg images.lock LICENSE > SHA256SUMS && cat SHA256SUMS
+	cp shared/images.lock LICENSE NOTICE.md build/
+	cd build && sha256sum *.qpkg images.lock LICENSE NOTICE.md > SHA256SUMS && cat SHA256SUMS
 
 clean:
 	rm -rf build

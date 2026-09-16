@@ -102,11 +102,13 @@ sudo /etc/init.d/myapp.sh remove           # 移除容器與網路，資料保�
 
 設定檔寫浮動 tag（沒有 `@sha256`）時照樣可以執行，但事件記錄會警告，狀態頁與 `diag` 會標示為未鎖定。
 
+每個容器的鎖定狀態有五種：`pinned-ok`（本機 image 與鎖定值相符）、`pinned-mismatch`（不符，記錄 Error）、`unpinned`（浮動 tag，記錄 Warning）、`unverifiable`（以 `docker load` 匯入，沒有 registry digest 可比對，記錄 Warning）、`missing`（尚未下載）。
+
 ## 驗證 release
 
 ```sh
 sha256sum -c SHA256SUMS
-gh attestation verify MyApp_0.1.0_x86_64.qpkg --repo ivanusto/qpkg-template
+gh attestation verify MyApp_0.1.1_x86_64.qpkg --repo ivanusto/qpkg-template
 ```
 
 `images.lock` 同時附在 release，不必解開 `.qpkg` 就能知道裡面鎖的是哪一個 image。
@@ -122,7 +124,7 @@ gh attestation verify MyApp_0.1.0_x86_64.qpkg --repo ivanusto/qpkg-template
 - QDK 的安裝腳本會編譯 `qpkg_encrypt`，缺少 gcc 會產出 App Center 拒收的 `.qpkg`，Dockerfile 已包含。
 - 腳本在 QTS 的 busybox sh 上執行，必須維持 LF 換行，`.gitattributes` 已設定。
 - 目前只打包 x86_64。套件內容與架構無關，需要 ARM 版時在 `qpkg.cfg` 加上 `QDK_DATA_DIR_ARM_64` 並以 `qbuild --build-arch arm_64` 打包。
-- 薄殼需要 NAS 能連到 registry。隔離網段請改用私有 registry，或事先 `docker save` / `docker load` 匯入 image。
+- 薄殼需要 NAS 能連到 registry。隔離網段建議改用私有 registry，digest 驗證照常運作。若改用 `docker save` / `docker load` 匯入，必須以 **tag** 匯出（`docker save repository:tag`，以 digest 匯出的 image 載入後沒有任何名稱）；匯入的 image 沒有 registry digest，套件會以 tag 啟動並標示為 `unverifiable`，鎖定值無法驗證。
 
 ## 授權
 
