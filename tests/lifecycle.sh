@@ -51,6 +51,9 @@ wait_for() {
 cleanup() {
     docker rm -f "$C_APP" "$C_APP-landing" >/dev/null 2>&1
     docker network rm "$NET" >/dev/null 2>&1
+    # The docker load section leaves a bare tag that cannot be removed
+    # while its container runs; drop it once the container is gone.
+    docker rmi "${IMAGE%@*}" >/dev/null 2>&1
     rm -rf "$WORK"
 }
 trap cleanup EXIT INT TERM
@@ -76,7 +79,9 @@ WEB_PORT="$PORT"
 TZ="UTC"
 STOP_TIMEOUT="1"
 EOF
-docker rmi "$IMAGE" >/dev/null 2>&1
+# Remove the bare tag as well: a leftover repository:tag without a repo
+# digest (e.g. from an earlier docker load) would stand in for the pin.
+docker rmi "$IMAGE" "${IMAGE%@*}" >/dev/null 2>&1
 docker image inspect "$IMAGE" >/dev/null 2>&1 && echo "  note: $IMAGE still present (in use elsewhere); download path not exercised"
 
 echo "== 1. first start downloads in the background"

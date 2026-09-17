@@ -10,16 +10,22 @@ on:
 permissions:
   contents: read
 
+# Every action is pinned to a full commit SHA with its version in a
+# comment, and QDK to a commit that must match the Dockerfile.
+# scripts/check-ci-pins.sh (make check-pins) fails the build otherwise.
+env:
+  QDK_REF: "b7b5f4c86ebe95b10a62d64725515e7cdcf4bb35"
+
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Lint (shellcheck)
         run: make lint
 
-      - name: Check image pins
+      - name: Check image and CI pins
         run: make check-pins
 
       - name: Lifecycle test
@@ -36,14 +42,27 @@ jobs:
       id-token: write
       attestations: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Tag must match QPKG_VER
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          VER=$(sed -n 's/^QPKG_VER="\(.*\)"/\1/p' qpkg.cfg)
+          [ "v$VER" = "$GITHUB_REF_NAME" ] || {
+            echo "qpkg.cfg says $VER but tag is $GITHUB_REF_NAME" >&2
+            exit 1
+          }
 
       - name: Install QDK
         run: |
           sudo apt-get update
           sudo apt-get install -y git make gcc libc6-dev rsync xz-utils dos2unix
-          git clone --depth 1 https://github.com/qnap-dev/QDK.git /tmp/QDK
-          cd /tmp/QDK && sudo ./InstallToUbuntu.sh install
+          git init -q /tmp/QDK
+          cd /tmp/QDK
+          git remote add origin https://github.com/qnap-dev/QDK.git
+          git fetch -q --depth 1 origin "$QDK_REF"
+          git checkout -q FETCH_HEAD
+          sudo ./InstallToUbuntu.sh install
 
       - name: Normalize line endings
         run: |
@@ -59,14 +78,14 @@ jobs:
 
       - name: Attest build provenance
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
         with:
           subject-path: |
             build/*.qpkg
             build/images.lock
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: qpkg
           path: |
@@ -79,7 +98,7 @@ jobs:
 
       - name: Release (on tag)
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           files: |
             build/*.qpkg

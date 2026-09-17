@@ -108,10 +108,25 @@ sudo /etc/init.d/myapp.sh remove           # 移除容器與網路，資料保�
 
 ```sh
 sha256sum -c SHA256SUMS
-gh attestation verify MyApp_0.1.1_x86_64.qpkg --repo ivanusto/qpkg-template
+gh attestation verify MyApp_0.1.2_x86_64.qpkg --repo ivanusto/qpkg-template --source-ref refs/tags/v0.1.2
 ```
 
 `images.lock` 同時附在 release，不必解開 `.qpkg` 就能知道裡面鎖的是哪一個 image。
+
+`--source-ref` 不可省略。attestation 綁的是檔案內容，內容相同的檔案（例如沒有變動的 `images.lock`）在不同版本各有一份聲明，不加限制時任何一份都能通過驗證。`gh attestation` 需要 GitHub CLI 2.49.0 以上。
+
+## CI 的供應鏈鎖定
+
+建置工具與 App 的 image 適用同一個原則：不引用會被別人移動的名稱。
+
+| 引用 | 鎖定方式 | 更新方式 |
+|---|---|---|
+| GitHub Actions | 完整 commit SHA，註解保留版本號 | Dependabot 每週提 PR |
+| QDK | `QDK_REF`，workflow 與 Dockerfile 必須相同 | 手動改兩處 |
+| builder 基底 image | `ubuntu:22.04@sha256:...` | Dependabot 每週提 PR |
+| shellcheck image | Makefile 的 `SHELLCHECK` 帶 digest | 手動 |
+
+`scripts/check-ci-pins.sh`（包含在 `make check-pins`）檢查以上四項，任一項退回浮動參考就讓 CI 失敗。打 tag 時 CI 另外檢查 tag 與 `qpkg.cfg` 的 `QPKG_VER` 一致，不一致就不發 release：先改 `qpkg.cfg` 與 CHANGELOG、commit，再打 tag。
 
 ## 安裝到 NAS
 

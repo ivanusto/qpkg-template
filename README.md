@@ -106,10 +106,25 @@ Each container has one of five pin states: `pinned-ok` (the local image matches 
 
 ```sh
 sha256sum -c SHA256SUMS
-gh attestation verify MyApp_0.1.1_x86_64.qpkg --repo ivanusto/qpkg-template
+gh attestation verify MyApp_0.1.2_x86_64.qpkg --repo ivanusto/qpkg-template --source-ref refs/tags/v0.1.2
 ```
 
 `images.lock` is attached to the release as well, so you can see which image a package pins without unpacking it.
+
+Keep `--source-ref`. An attestation is bound to file content, and identical files (such as an unchanged `images.lock`) carry one attestation per release, so without it any of them passes. `gh attestation` needs GitHub CLI 2.49.0 or later.
+
+## Supply chain of the CI itself
+
+The build tools follow the same rule as the app image: never reference a name someone else can move.
+
+| Reference | Pinned as | Updated by |
+|---|---|---|
+| GitHub Actions | full commit SHA, version in a comment | Dependabot, weekly PRs |
+| QDK | `QDK_REF`, identical in the workflow and the Dockerfile | by hand, both places |
+| builder base image | `ubuntu:22.04@sha256:...` | Dependabot, weekly PRs |
+| shellcheck image | `SHELLCHECK` in the Makefile with a digest | by hand |
+
+`scripts/check-ci-pins.sh` (part of `make check-pins`) checks all four and fails CI if any of them falls back to a movable reference. On a tag, CI also checks that the tag matches `QPKG_VER` in `qpkg.cfg` and refuses to release otherwise: bump `qpkg.cfg` and the CHANGELOG, commit, then tag.
 
 ## Installing on the NAS
 

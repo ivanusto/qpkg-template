@@ -7,7 +7,7 @@
 #   make clean
 
 BUILDER_IMAGE := qpkg-template-builder
-SHELLCHECK    := koalaman/shellcheck-alpine:stable
+SHELLCHECK    := koalaman/shellcheck-alpine:stable@sha256:c82fe42504fbc9fc68f15d36638e5ee2324ebb8b94e96a3c4e395bf361c49183
 SRC           := $(CURDIR)
 SH_FILES      := $(wildcard shared/*.sh shared/lib/*.sh scripts/*.sh tests/*.sh) package_routines
 
@@ -29,6 +29,7 @@ lint:
 
 check-pins:
 	sh scripts/check-pins.sh
+	sh scripts/check-ci-pins.sh
 
 test-lifecycle:
 	sh tests/lifecycle.sh
