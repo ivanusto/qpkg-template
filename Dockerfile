@@ -6,7 +6,7 @@
 # change in this repository. QDK_REF must match the one in
 # .github/workflows/build.yml (scripts/check-ci-pins.sh enforces it).
 
-FROM ubuntu:22.04@sha256:829f6df217bcbae2b371026e81711d1a787c61b2967ad09d015063663ebafbf7
+FROM ubuntu:26.04@sha256:cd21a4f68a617580279d4b091cb18e3af9fa8a87500665f0ae5f7f757d17d367
 
 ARG QDK_REF=b7b5f4c86ebe95b10a62d64725515e7cdcf4bb35
 
