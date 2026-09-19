@@ -73,6 +73,7 @@
       whyTitle: "Why am I seeing this page?",
       why: "This package ships only management scripts. After installation Container Station downloads the pinned container image in the background. Until the app is up, this lightweight page borrows the web port so you can follow the progress.",
       cmdTitle: "Maintenance commands (SSH, as admin)",
+      optionalOn: " (optional)", optionalOff: " (optional, not running)",
       container: "Container", image: "Image", digest: "Image pin", port: "Web port",
       tz: "Time zone", updated: "Updated at", empty: "(not set)",
       connecting: "Starting the app (the first launch can take a few minutes)...",
@@ -94,6 +95,7 @@
       whyTitle: "為什麼會看到這個畫面？",
       why: "本套件只包含管理腳本。安裝後由 Container Station 在背景下載鎖定版本的容器映像檔。應用程式啟動之前，這個輕量頁面會暫時佔用網頁埠，讓你確認進度。",
       cmdTitle: "維護指令（SSH，以管理員執行）",
+      optionalOn: "（選用）", optionalOff: "（選用，未執行）",
       container: "容器", image: "映像檔", digest: "版本鎖定", port: "網頁埠",
       tz: "時區", updated: "更新時間", empty: "（未設定）",
       connecting: "應用程式啟動中（首次啟動可能需要數分鐘）…",
@@ -147,7 +149,7 @@
     el("state").className = "pill " + m[0];
     el("state").textContent = m[1];
     (last.containers || []).forEach(function(c){
-      row(tbl, t.container + " (" + c.id + ")", c.name);
+      row(tbl, t.container + " (" + c.id + ")", c.name + (c.optional ? (c.running ? t.optionalOn : t.optionalOff) : ""));
       row(tbl, t.image, c.image);
       row(tbl, t.digest, t.digests[c.digest] || c.digest);
     });

@@ -11,6 +11,7 @@ set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 PORT="${TEST_PORT:-18190}"
 PORT2=$((PORT + 1))
+PORT3=$((PORT + 2))
 PREFIX="qpkgtpl-test"
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/qpkg-template-test.XXXXXX")
 PASS=0
@@ -27,6 +28,8 @@ APP="$QPKG_ROOT_OVERRIDE/$SCRIPT"
 CONF_FILE="$QPKG_ROOT_OVERRIDE/$(sed -n 's/^CONF_NAME="\(.*\)"/\1/p' "$ROOT"/shared/*.sh | head -n 1)"
 IMAGE=$(sed -n 's/^APP_IMAGE=//p' "$ROOT/shared/images.lock")
 C_APP="$PREFIX-app"
+C_EXTRA="$PREFIX-extra"
+C_BLOCK="$PREFIX-blocker"
 NET="$PREFIX-net"
 
 ok()   { PASS=$((PASS + 1)); echo "  ok   $1"; }
@@ -49,7 +52,7 @@ wait_for() {
 }
 
 cleanup() {
-    docker rm -f "$C_APP" "$C_APP-landing" >/dev/null 2>&1
+    docker rm -f "$C_APP" "$C_APP-landing" "$C_EXTRA" "$C_BLOCK" >/dev/null 2>&1
     docker network rm "$NET" >/dev/null 2>&1
     # The docker load section leaves a bare tag that cannot be removed
     # while its container runs; drop it once the container is gone.
@@ -150,20 +153,63 @@ check "after pulling the pin, status is pinned-ok" 'grep -q "\"digest\": \"pinne
 check "same image, container not recreated" '[ "$(created "$C_APP")" = "$C3" ]'
 docker rmi "$TAGREF" >/dev/null 2>&1
 
-echo "== 7. diag"
+echo "== 7. optional container that can be switched off"
+# Turn the demo into a two-container app: "extra" starts first, may fail
+# without failing the app, and is off unless EXTRA_ENABLED=true.
+sed -i 's/^CONTAINERS="app"/CONTAINERS="extra app"/; s/^OPTIONAL_CONTAINERS=""/OPTIONAL_CONTAINERS="extra"/' "$APP"
+sed -i '/^# -* run$/i\
+app_enabled_extra() { [ "$EXTRA_ENABLED" = "true" ]; }\
+app_fingerprint_extra() { echo "$EXTRA_PORT"; }\
+app_run_extra() {\
+    "$DOCKER" run -d --name "$EXTRA_CONTAINER_NAME" --network "$NETWORK_NAME" -p "$EXTRA_PORT":80 "$EXTRA_IMAGE"\
+}\
+' "$APP"
+cat >> "$CONF_FILE" <<EOF
+EXTRA_IMAGE="$IMAGE"
+EXTRA_CONTAINER_NAME="$C_EXTRA"
+EXTRA_PORT="$PORT3"
+EXTRA_ENABLED="false"
+EOF
+"$APP" restart 2>/dev/null
+check "switched off: app running" '[ "$(state)" = running ]'
+check "switched off: container not created" '! docker inspect "$C_EXTRA" >/dev/null 2>&1'
+check "switched off: not on the status page" '! grep -q "\"id\": \"extra\"" "$QPKG_ROOT_OVERRIDE/web/status.json"'
+check "switched off: status exits 0" '"$APP" status >/dev/null'
+
+docker run -d --name "$C_BLOCK" -p "$PORT3":80 "$IMAGE" >/dev/null
+sed -i 's/^EXTRA_ENABLED=.*/EXTRA_ENABLED="true"/' "$CONF_FILE"
+"$APP" restart 2>/dev/null
+check "optional fails: app still running" '[ "$(state)" = running ]'
+check "optional fails: status exits 0" '"$APP" status >/dev/null'
+check "optional fails: warning logged" 'grep -q "Optional container .extra. did not start" "$QPKG_ROOT_OVERRIDE/logs/"*.log'
+check "optional fails: listed as optional, not running" 'grep -q "\"id\": \"extra\".*\"running\": false, \"optional\": true" "$QPKG_ROOT_OVERRIDE/web/status.json"'
+
+docker rm -f "$C_BLOCK" >/dev/null 2>&1
+"$APP" restart 2>/dev/null
+check "port freed: optional container runs" 'docker inspect -f "{{.State.Running}}" "$C_EXTRA" 2>/dev/null | grep -q true'
+
+sed -i 's/^EXTRA_ENABLED=.*/EXTRA_ENABLED="false"/' "$CONF_FILE"
+"$APP" start 2>/dev/null
+check "switched off again: container stopped" 'docker inspect -f "{{.State.Running}}" "$C_EXTRA" 2>/dev/null | grep -q false'
+check "switched off again: logged" 'grep -q "Stopped .extra. because it is switched off" "$QPKG_ROOT_OVERRIDE/logs/"*.log'
+check "switched off again: app running" '"$APP" status >/dev/null'
+
+echo "== 8. diag"
 OUT=$("$APP" diag 2>&1)
 RC=$?
 check "diag exits 0" '[ "$RC" -eq 0 ]'
 for S in package docker "registry DNS" images containers network configuration app; do
     check "diag has section '$S'" 'echo "$OUT" | grep -q -- "--- $S ---"'
 done
+check "diag marks the switched-off container" 'echo "$OUT" | grep -q "^extra: .*disabled"'
 
-echo "== 8. stop and remove"
+echo "== 9. stop and remove"
 "$APP" stop 2>/dev/null
 check "stopped" '! "$APP" status >/dev/null'
 check "state stopped" '[ "$(state)" = stopped ]'
 "$APP" remove 2>/dev/null
 check "container removed" '! docker inspect "$C_APP" >/dev/null 2>&1'
+check "switched-off container removed too" '! docker inspect "$C_EXTRA" >/dev/null 2>&1'
 check "network removed" '! docker network inspect "$NET" >/dev/null 2>&1'
 check "fingerprint removed" '[ ! -f "$QPKG_ROOT_OVERRIDE/.conf-$C_APP" ]'
 check "configuration kept" '[ -f "$CONF_FILE" ]'

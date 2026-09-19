@@ -60,12 +60,14 @@ The skeleton is extracted from [open-webui-ollama-qpkg](https://github.com/ivanu
 |---|---|---|
 | `QPKG_NAME`, `DISPLAY_NAME`, `SCRIPT_NAME`, `CONF_NAME` | yes | Names, filled in by `new-app.sh` |
 | `CONTAINERS` | yes | Container ids in start order; stop runs in reverse |
+| `OPTIONAL_CONTAINERS` | no | Ids whose start failure is logged as a warning instead of failing the app; the status page marks them |
 | `WEB_ID` | yes | Id of the container that publishes `WEB_PORT`; the status page borrows that port |
 | `HEALTH_PATH` | yes | Path that answers 2xx once the app is ready; the status page hands over on it |
 | `DIAG_HOSTS` | no | Extra hosts for the `diag` DNS check |
 | `app_defaults` | yes | Fill in unset defaults; at least `<ID>_CONTAINER_NAME` and `WEB_PORT` |
 | `app_run_<id>` | yes | Create the container with `"$DOCKER" run -d` |
 | `app_fingerprint_<id>` | yes | Print every value used on the `docker run` line; anything missing is silently not applied |
+| `app_enabled_<id>` | no | Return non-zero to switch the container off: it is not downloaded, created or listed, and a running one is stopped. Its image must still be pinned |
 | `app_needs_recreate_<id>` | no | Return 0 to recreate a stopped container, e.g. GPU self-heal after a late runtime registration |
 | `app_run_fallback_<id>` | no | Fallback when `app_run_<id>` fails, e.g. retry without `--gpus` |
 | `app_status_fields` | no | Extra status page rows, one `label_en\|label_zh\|value` per line |
@@ -106,7 +108,7 @@ Each container has one of five pin states: `pinned-ok` (the local image matches 
 
 ```sh
 sha256sum -c SHA256SUMS
-gh attestation verify MyApp_0.1.2_x86_64.qpkg --repo ivanusto/qpkg-template --source-ref refs/tags/v0.1.2
+gh attestation verify MyApp_0.2.0_x86_64.qpkg --repo ivanusto/qpkg-template --source-ref refs/tags/v0.2.0
 ```
 
 `images.lock` is attached to the release as well, so you can see which image a package pins without unpacking it.

@@ -62,12 +62,14 @@ QNAP Container Station 薄殼 QPKG 範本。套件本身不含任何 Docker imag
 |---|---|---|
 | `QPKG_NAME`、`DISPLAY_NAME`、`SCRIPT_NAME`、`CONF_NAME` | 是 | 名稱，`new-app.sh` 會填好 |
 | `CONTAINERS` | 是 | 容器 id 清單，依啟動順序排列，停止時反序 |
+| `OPTIONAL_CONTAINERS` | 否 | 啟動失敗時只記警告、不讓整個 App 失敗的容器 id，狀態頁會標示為選用 |
 | `WEB_ID` | 是 | 發布 `WEB_PORT` 的容器 id，狀態頁會暫借這個埠 |
 | `HEALTH_PATH` | 是 | App 就緒時回應 2xx 的路徑，狀態頁據此交接 |
 | `DIAG_HOSTS` | 否 | `diag` 額外檢查 DNS 的主機 |
 | `app_defaults` | 是 | 填入未設定的預設值，至少要有 `<ID>_CONTAINER_NAME` 與 `WEB_PORT` |
 | `app_run_<id>` | 是 | 以 `"$DOCKER" run -d` 建立容器 |
 | `app_fingerprint_<id>` | 是 | 印出所有出現在 `docker run` 上的值；漏列的設定改了不會生效 |
+| `app_enabled_<id>` | 否 | 回傳非零表示關閉這個容器：不下載、不建立、狀態頁不列，已在執行的會被停止。它的 image 仍須鎖定 |
 | `app_needs_recreate_<id>` | 否 | 容器停止時回傳 0 表示要重建，例如 GPU 晚註冊的自我修復 |
 | `app_run_fallback_<id>` | 否 | `app_run_<id>` 失敗時的替代方案，例如退回不帶 `--gpus` |
 | `app_status_fields` | 否 | 狀態頁額外欄位，每行 `英文標籤\|中文標籤\|值` |
@@ -108,7 +110,7 @@ sudo /etc/init.d/myapp.sh remove           # 移除容器與網路，資料保�
 
 ```sh
 sha256sum -c SHA256SUMS
-gh attestation verify MyApp_0.1.2_x86_64.qpkg --repo ivanusto/qpkg-template --source-ref refs/tags/v0.1.2
+gh attestation verify MyApp_0.2.0_x86_64.qpkg --repo ivanusto/qpkg-template --source-ref refs/tags/v0.2.0
 ```
 
 `images.lock` 同時附在 release，不必解開 `.qpkg` 就能知道裡面鎖的是哪一個 image。

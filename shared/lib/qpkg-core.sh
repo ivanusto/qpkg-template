@@ -5,8 +5,8 @@
 # qpkg-core.sh: generic engine for thin Container Station QPKGs
 #
 # Sourced by the app's service script after it has set QPKG_NAME,
-# SCRIPT_NAME, CONF_NAME, CONTAINERS, WEB_ID, HEALTH_PATH, QPKG_ROOT and
-# defined its hooks. Nothing in here is app-specific; if you find
+# SCRIPT_NAME, CONF_NAME, CONTAINERS, WEB_ID, HEALTH_PATH, QPKG_ROOT
+# (optionally OPTIONAL_CONTAINERS) and defined its hooks. Nothing in here is app-specific; if you find
 # yourself editing it for one app, add a hook instead.
 #
 # Extracted from open-webui-ollama-qpkg v1.0.7. Each safeguard below
@@ -60,6 +60,29 @@ containers_reversed() {
     REV=""
     for C in $CONTAINERS; do REV="$C $REV"; done
     echo "$REV"
+}
+
+# A container is enabled unless the app defines app_enabled_<id> and it
+# returns non-zero. A disabled container is not downloaded, created,
+# listed on the status page or waited for, but its image must still be
+# pinned in images.lock: switched off is not the same as absent.
+container_enabled() {
+    has_func "app_enabled_$1" || return 0
+    "app_enabled_$1"
+}
+
+# Ids in OPTIONAL_CONTAINERS may fail to start without failing the app.
+container_optional() {
+    case " $OPTIONAL_CONTAINERS " in *" $1 "*) return 0 ;; esac
+    return 1
+}
+
+enabled_containers() {
+    EC=""
+    for EC_ID in $CONTAINERS; do
+        container_enabled "$EC_ID" && EC="$EC $EC_ID"
+    done
+    echo "$EC"
 }
 
 # QTS has no system docker; Container Station ships the CLI. Prefer the
@@ -227,7 +250,7 @@ digest_state() {
 }
 
 all_images() {
-    for C in $CONTAINERS; do cvar "$C" IMAGE; done
+    for C in $(enabled_containers); do cvar "$C" IMAGE; done
 }
 
 all_images_present() {
@@ -243,7 +266,7 @@ pull_images() {
 
 # Warn about images that are not pinned or do not match their pin.
 report_digests() {
-    for C in $CONTAINERS; do
+    for C in $(enabled_containers); do
         IMG=$(cvar "$C" IMAGE)
         case "$(digest_state "$IMG")" in
             unpinned)        log "Image for '$C' is a floating tag ($IMG); it can change on the next pull. Pin it with @sha256." 2 ;;
@@ -298,7 +321,7 @@ write_status() {
         echo "  \"script\": \"$(json_escape "/etc/init.d/$SCRIPT_NAME")\","
         echo "  \"containers\": ["
         SEP=""
-        for C in $CONTAINERS; do
+        for C in $(enabled_containers); do
             N=$(cvar "$C" CONTAINER_NAME)
             IMG=$(cvar "$C" IMAGE)
             if [ -n "$DOCKER" ]; then
@@ -308,8 +331,9 @@ write_status() {
                 RUN=false
                 DS=unknown
             fi
-            printf '%s    {"id": "%s", "name": "%s", "image": "%s", "running": %s, "digest": "%s"}' \
-                "$SEP" "$(json_escape "$C")" "$(json_escape "$N")" "$(json_escape "$IMG")" "$RUN" "$DS"
+            OPT=$(container_optional "$C" && echo true || echo false)
+            printf '%s    {"id": "%s", "name": "%s", "image": "%s", "running": %s, "optional": %s, "digest": "%s"}' \
+                "$SEP" "$(json_escape "$C")" "$(json_escape "$N")" "$(json_escape "$IMG")" "$RUN" "$OPT" "$DS"
             SEP=",
 "
         done
@@ -533,14 +557,28 @@ run_container() {
     return $RC
 }
 
+# Disabled containers are stopped, not removed, so switching one back on
+# reuses it. An optional container that fails is logged and skipped.
 run_all() {
     for C in $CONTAINERS; do
-        run_container "$C" || return 1
+        if ! container_enabled "$C"; then
+            RA_NAME=$(cvar "$C" CONTAINER_NAME)
+            if container_running "$RA_NAME"; then
+                "$DOCKER" stop -t "$STOP_TIMEOUT" "$RA_NAME" >/dev/null 2>&1
+                log "Stopped '$C' because it is switched off in $CONF_NAME." 4
+            fi
+            continue
+        fi
+        run_container "$C" && continue
+        container_optional "$C" || return 1
+        log "Optional container '$C' did not start; $DISPLAY_NAME runs without it." 2
     done
 }
 
+# Running as far as QTS is concerned: every enabled, required container.
 all_running() {
-    for C in $CONTAINERS; do
+    for C in $(enabled_containers); do
+        container_optional "$C" && continue
         container_running "$(cvar "$C" CONTAINER_NAME)" || return 1
     done
 }
@@ -596,7 +634,7 @@ start_or_defer() {
 }
 
 containers_all_exist() {
-    for C in $CONTAINERS; do
+    for C in $(enabled_containers); do
         container_exists "$(cvar "$C" CONTAINER_NAME)" || return 1
     done
 }
@@ -666,7 +704,7 @@ do_update() {
 # (the download you would need anyway) but never touches containers.
 do_update_check() {
     CHK_RC=0
-    for C in $CONTAINERS; do
+    for C in $(enabled_containers); do
         IMG=$(cvar "$C" IMAGE)
         PIN=$(ref_digest "$IMG")
         TAGREF="${IMG%@*}"
@@ -720,14 +758,17 @@ do_diag() {
     echo "--- images ---"
     for C in $CONTAINERS; do
         IMG=$(cvar "$C" IMAGE)
-        echo "$C: $IMG"
+        container_enabled "$C" || { echo "$C: disabled ($IMG)"; continue; }
+        echo "$C: $IMG$(container_optional "$C" && echo " (optional)")"
         echo "    state : $(digest_state "$IMG")"
         echo "    local : $(local_repo_digest "$IMG")"
     done
     echo "--- containers ---"
     for C in $CONTAINERS; do
         N=$(cvar "$C" CONTAINER_NAME)
-        if container_exists "$N"; then
+        if ! container_enabled "$C"; then
+            echo "$C: $N (disabled$(container_exists "$N" && echo ", container kept"))"
+        elif container_exists "$N"; then
             echo "$C: $N $("$DOCKER" inspect -f 'running={{.State.Running}} created={{.Created}} restarts={{.RestartCount}}' "$N" 2>/dev/null)"
             FPF=$(fingerprint_file "$N")
             if [ ! -f "$FPF" ]; then
@@ -842,7 +883,9 @@ main() {
                 # .images-ready marker proves this app ran before, so
                 # absence can only mean "not loaded yet": keep waiting
                 # instead of falling into the download path.
-                FIRST_ID="${CONTAINERS%% *}"
+                FIRST_ID=$(enabled_containers)
+                FIRST_ID="${FIRST_ID# }"
+                FIRST_ID="${FIRST_ID%% *}"
                 SETTLE=0
                 LIMIT=60
                 [ -f "$QPKG_ROOT/.images-ready" ] && LIMIT="$CS_WAIT_TIMEOUT"

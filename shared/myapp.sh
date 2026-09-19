@@ -11,7 +11,9 @@
 # To package another app, change the settings block and the hook
 # functions below. For each container id listed in CONTAINERS, the core
 # expects the variables <ID>_IMAGE and <ID>_CONTAINER_NAME (uppercase id)
-# and the functions app_run_<id> and app_fingerprint_<id>.
+# and the functions app_run_<id> and app_fingerprint_<id>. A container
+# that can be switched off gets an app_enabled_<id> hook; one that may
+# fail without taking the app down goes in OPTIONAL_CONTAINERS.
 #
 # Usage: myapp.sh {start|stop|restart|status|pull|bgpull|update [--check]|remove|diag}
 ######################################################################
@@ -25,6 +27,9 @@ CONF_NAME="myapp.conf"
 
 # Container ids, in start order. Stop runs in reverse.
 CONTAINERS="app"
+# Ids whose start failure is logged as a warning instead of failing the
+# app (a web editor, a helper browser). Their images are still pinned.
+OPTIONAL_CONTAINERS=""
 # The container that publishes WEB_PORT (the status page borrows the port
 # while images download).
 WEB_ID="app"
@@ -73,6 +78,10 @@ app_run_app() {
 
 # Optional hooks, delete if unused:
 #
+# app_enabled_<id>        return non-zero to switch container <id> off:
+#                         it is not downloaded, created or listed, and a
+#                         running one is stopped. Example:
+#                         app_enabled_editor() { [ "$ENABLE_EDITOR" = "true" ]; }
 # app_needs_recreate_app  return 0 to recreate a stopped container that
 #                         would otherwise be reused (e.g. GPU self-heal).
 # app_run_fallback_app    called with the error output when app_run_app

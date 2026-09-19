@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.2.0
+
+- 選用容器。`app_enabled_<id>` 鉤子回傳非零時，該容器不下載、不建立、狀態頁不列、`status` 不等它，已在執行的會被停止（不刪除，重新開啟時沿用）。列在 `OPTIONAL_CONTAINERS` 的容器啟動失敗只寫 Warning 事件，App 仍回報 `running`，狀態頁標示「選用，未執行」。v0.1.2 沒有這兩項時，只能讓 `app_run_<id>` 直接 `return 0`，結果是 image 照樣下載，而且 `status` 回報 not running，QTS 會把整個 App 當成停止。
+- `check-pins.sh` 不變：關閉的容器照樣要在 `images.lock` 裡鎖定，關閉只是不起，不是不存在。
+- `_bg_start` 等待物件庫時改看第一個啟用的容器，第一個容器被關閉時不會空等 `CS_WAIT_TIMEOUT`。
+- `tests/lifecycle.sh` 新增選用容器情境（關閉、啟動失敗、重新開啟、再關閉），共 57 項。
+
 ## v0.1.2
 
 - CI 引用的東西全部鎖定：四個 GitHub Actions 釘到完整 commit SHA 並以註解保留版本號（checkout v4.4.0、upload-artifact v4.6.2、attest-build-provenance v2.4.0、action-gh-release v2.6.2）；QDK 釘在 `b7b5f4c`，workflow 與 Dockerfile 共用同一個 `QDK_REF`；Dockerfile 的 `ubuntu:22.04` 與 Makefile 的 shellcheck image 改以 digest 鎖定。
