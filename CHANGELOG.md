@@ -5,6 +5,7 @@
 - 選用容器。`app_enabled_<id>` 鉤子回傳非零時，該容器不下載、不建立、狀態頁不列、`status` 不等它，已在執行的會被停止（不刪除，重新開啟時沿用）。列在 `OPTIONAL_CONTAINERS` 的容器啟動失敗只寫 Warning 事件，App 仍回報 `running`，狀態頁標示「選用，未執行」。v0.1.2 沒有這兩項時，只能讓 `app_run_<id>` 直接 `return 0`，結果是 image 照樣下載，而且 `status` 回報 not running，QTS 會把整個 App 當成停止。
 - `check-pins.sh` 不變：關閉的容器照樣要在 `images.lock` 裡鎖定，關閉只是不起，不是不存在。
 - `_bg_start` 等待物件庫時改看第一個啟用的容器，第一個容器被關閉時不會空等 `CS_WAIT_TIMEOUT`。
+- 安裝後 `chown -R 0:0` 整個安裝目錄。qbuild 會保留建置者的 uid（GitHub runner 是 1001，本機建置是自己的 uid），在 NAS 上這個 uid 可能對應到真實的一般使用者，他就能改寫 QTS 以 root 執行的服務腳本。v0.1.x 的套件在 NAS 上實測都有這個問題。
 - `tests/lifecycle.sh` 新增選用容器情境（關閉、啟動失敗、重新開啟、再關閉），共 57 項。
 
 ## v0.1.2
