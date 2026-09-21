@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.1
+
+- 升級時不再在前景下載 image。`start` 原本只要容器都存在就直接進 `run_all`，當新版套件帶來新的鎖定 digest 時，容器因指紋不同要重建，`docker run` 會在前景把整個 image 拉下來，App Center 一直等到下載完。現在逐一判斷：image 在本機，或容器存在且不需要重建（`docker start` 不需要 image），才直接啟動；否則走狀態頁與背景下載。開機時物件庫先列出容器、image 較晚出現的情況不受影響，因為那時容器不需要重建。
+- `tests/lifecycle.sh` 新增「容器存在、鎖定換版」情境，共 62 項；在 v0.2.0 的核心上這個情境會失敗。
+
 ## v0.2.0
 
 - 選用容器。`app_enabled_<id>` 鉤子回傳非零時，該容器不下載、不建立、狀態頁不列、`status` 不等它，已在執行的會被停止（不刪除，重新開啟時沿用）。列在 `OPTIONAL_CONTAINERS` 的容器啟動失敗只寫 Warning 事件，App 仍回報 `running`，狀態頁標示「選用，未執行」。v0.1.2 沒有這兩項時，只能讓 `app_run_<id>` 直接 `return 0`，結果是 image 照樣下載，而且 `status` 回報 not running，QTS 會把整個 App 當成停止。

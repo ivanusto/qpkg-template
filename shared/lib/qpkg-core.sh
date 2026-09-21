@@ -633,16 +633,29 @@ start_or_defer() {
     fi
 }
 
-containers_all_exist() {
+# A container can start without its image only if it already exists and
+# will not be recreated (docker start needs no image, docker run does).
+# At boot the object store may list containers before their images, so
+# existing containers must not send the app into the download path; but a
+# container that has to be recreated for a new pin must not either, or
+# docker run pulls the image in the foreground and App Center waits.
+container_startable() {
+    image_present "$(cvar "$1" IMAGE)" && return 0
+    CS_NAME=$(cvar "$1" CONTAINER_NAME)
+    container_exists "$CS_NAME" || return 1
+    ! config_changed "$CS_NAME" "$(container_fingerprint "$1")"
+}
+
+all_startable() {
     for C in $(enabled_containers); do
-        container_exists "$(cvar "$C" CONTAINER_NAME)" || return 1
+        container_startable "$C" || return 1
     done
 }
 
 do_start() {
     ensure_network
     write_status "starting"
-    if containers_all_exist || all_images_present; then
+    if all_startable; then
         stop_landing
         run_all || { write_status "error"; return 1; }
         touch "$QPKG_ROOT/.images-ready"

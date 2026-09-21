@@ -27,6 +27,8 @@ QPKG_NAME=$(sed -n 's/^QPKG_NAME="\(.*\)"/\1/p' "$ROOT/qpkg.cfg")
 APP="$QPKG_ROOT_OVERRIDE/$SCRIPT"
 CONF_FILE="$QPKG_ROOT_OVERRIDE/$(sed -n 's/^CONF_NAME="\(.*\)"/\1/p' "$ROOT"/shared/*.sh | head -n 1)"
 IMAGE=$(sed -n 's/^APP_IMAGE=//p' "$ROOT/shared/images.lock")
+# A second pinned image for the "pin moved" scenario; never present at start.
+ALT_IMAGE="traefik/whoami:v1.11.0@sha256:200689790a0a0ea48ca45992e0450bc26ccab5307375b41c84dfc4f2475937ab"
 C_APP="$PREFIX-app"
 C_EXTRA="$PREFIX-extra"
 C_BLOCK="$PREFIX-blocker"
@@ -57,6 +59,7 @@ cleanup() {
     # The docker load section leaves a bare tag that cannot be removed
     # while its container runs; drop it once the container is gone.
     docker rmi "${IMAGE%@*}" >/dev/null 2>&1
+    docker rmi "$ALT_IMAGE" "${ALT_IMAGE%@*}" >/dev/null 2>&1
     rm -rf "$WORK"
 }
 trap cleanup EXIT INT TERM
@@ -84,7 +87,7 @@ STOP_TIMEOUT="1"
 EOF
 # Remove the bare tag as well: a leftover repository:tag without a repo
 # digest (e.g. from an earlier docker load) would stand in for the pin.
-docker rmi "$IMAGE" "${IMAGE%@*}" >/dev/null 2>&1
+docker rmi "$IMAGE" "${IMAGE%@*}" "$ALT_IMAGE" "${ALT_IMAGE%@*}" >/dev/null 2>&1
 docker image inspect "$IMAGE" >/dev/null 2>&1 && echo "  note: $IMAGE still present (in use elsewhere); download path not exercised"
 
 echo "== 1. first start downloads in the background"
@@ -123,6 +126,23 @@ check "container not recreated by update" '[ "$(created "$C_APP")" = "$C2" ]'
 OUT=$("$APP" update --check 2>&1)
 check "update --check reports the pin" 'echo "$OUT" | grep -q "pinned"'
 check "update --check leaves the container alone" '[ "$(created "$C_APP")" = "$C2" ]'
+
+echo "== 4b. pin moved while the container exists: download in the background"
+# An upgrade that ships a new pin: the container exists but must be
+# recreated from an image that is not here yet. start must not pull it
+# in the foreground (App Center would wait for the whole download).
+"$APP" stop 2>/dev/null
+echo "APP_IMAGE=\"$ALT_IMAGE\"" >> "$CONF_FILE"
+T0=$(date +%s)
+"$APP" start 2>/dev/null
+T1=$(date +%s)
+check "start returns within 10 s" '[ $((T1 - T0)) -le 10 ]'
+check "start goes to downloading-image" '[ "$(state)" = downloading-image ]'
+wait_for "state becomes running" '[ "$(state)" = running ]' 180
+check "container recreated from the new pin" '[ "$(docker inspect -f "{{.Config.Image}}" "$C_APP")" = "$ALT_IMAGE" ]'
+sed -i '/^APP_IMAGE=/d' "$CONF_FILE"
+"$APP" restart 2>/dev/null
+check "back on the original pin" '[ "$(docker inspect -f "{{.Config.Image}}" "$C_APP")" = "$IMAGE" ]'
 
 echo "== 5. floating tag is flagged"
 echo "APP_IMAGE=\"${IMAGE%@*}\"" >> "$CONF_FILE"
