@@ -84,6 +84,7 @@ NETWORK_NAME="$NET"
 WEB_PORT="$PORT"
 TZ="UTC"
 STOP_TIMEOUT="1"
+PULL_RETRY_DELAY="1"
 EOF
 # Remove the bare tag as well: a leftover repository:tag without a repo
 # digest (e.g. from an earlier docker load) would stand in for the pin.
@@ -130,19 +131,45 @@ check "update --check leaves the container alone" '[ "$(created "$C_APP")" = "$C
 echo "== 4b. pin moved while the container exists: download in the background"
 # An upgrade that ships a new pin: the container exists but must be
 # recreated from an image that is not here yet. start must not pull it
-# in the foreground (App Center would wait for the whole download).
+# in the foreground (App Center would wait for the whole download), and
+# must not take the app down either: the previous version keeps serving.
 "$APP" stop 2>/dev/null
 echo "APP_IMAGE=\"$ALT_IMAGE\"" >> "$CONF_FILE"
 T0=$(date +%s)
 "$APP" start 2>/dev/null
 T1=$(date +%s)
 check "start returns within 10 s" '[ $((T1 - T0)) -le 10 ]'
-check "start goes to downloading-image" '[ "$(state)" = downloading-image ]'
+check "start keeps the previous version serving" '[ "$(state)" = updating ] || [ "$(state)" = running ]'
+check "no status page over the running app" '! docker inspect "$C_APP-landing" >/dev/null 2>&1'
 wait_for "state becomes running" '[ "$(state)" = running ]' 180
 check "container recreated from the new pin" '[ "$(docker inspect -f "{{.Config.Image}}" "$C_APP")" = "$ALT_IMAGE" ]'
 sed -i '/^APP_IMAGE=/d' "$CONF_FILE"
 "$APP" restart 2>/dev/null
 check "back on the original pin" '[ "$(docker inspect -f "{{.Config.Image}}" "$C_APP")" = "$IMAGE" ]'
+
+echo "== 4c. a failed download of a new pin keeps the previous version"
+# A registry CDN can stall on a fresh release for hours. A digest that
+# does not exist fails the same way, only faster.
+C4=$(created "$C_APP")
+echo "APP_IMAGE=\"traefik/whoami:v1.10.9@sha256:$(printf '%064d' 0)\"" >> "$CONF_FILE"
+"$APP" restart 2>/dev/null
+check "restart goes to updating" '[ "$(state)" = updating ]'
+check "app still answers while downloading" 'http_ok "$PORT2" /'
+wait_for "failed download ends in running" '[ "$(state)" = running ]' 60
+check "failure logged as a warning" '[ "$(grep -c "still running the previous version" "$QPKG_ROOT_OVERRIDE"/logs/*.log | awk -F: "{s += \$NF} END {print s + 0}")" -ge 1 ]'
+check "container not recreated" '[ "$(created "$C_APP")" = "$C4" ]'
+check "status exits 0" '"$APP" status >/dev/null'
+# A pull left by an older version is still running: the new job waits
+# for it, then makes its own attempt.
+sleep 12 &
+echo $! > "$QPKG_ROOT_OVERRIDE/logs/pull.pid"
+"$APP" restart 2>/dev/null
+sleep 5
+check "new job waits for the earlier pull" '[ "$(state)" = updating ]'
+wait_for "then makes its own attempt" '[ "$(grep -c "still running the previous version" "$QPKG_ROOT_OVERRIDE"/logs/*.log | awk -F: "{s += \$NF} END {print s + 0}")" -ge 2 ]' 60
+check "app still answers" 'http_ok "$PORT2" /'
+sed -i '/^APP_IMAGE=/d' "$CONF_FILE"
+"$APP" restart 2>/dev/null
 
 echo "== 5. floating tag is flagged"
 echo "APP_IMAGE=\"${IMAGE%@*}\"" >> "$CONF_FILE"

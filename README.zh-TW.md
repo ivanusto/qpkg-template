@@ -102,6 +102,8 @@ sudo /etc/init.d/myapp.sh remove           # 移除容器與網路，資料保�
 2. 在 repo 用 `scripts/pin-images.sh APP_IMAGE=<repository>:<新 tag>` 更新鎖定值，發新版 QPKG；或在 NAS 的設定檔覆寫 `APP_IMAGE`。
 3. `update` 或 `restart`，只有 image 或設定有變的容器會重建。
 
+`start` 或 `restart` 遇到新的鎖定值、而 image 還不在本機時（App Center 裝完新版後通常就是這樣），既有容器繼續以舊版服務，image 在背景下載，完整下載後才替換，這時不使用狀態頁。下載失敗時舊版照常運作，狀態維持 `running`，事件記錄寫警告。上游剛發版時，映像站的 CDN 可能連續數小時只有平常速度的零頭，升級絕不能讓 App 停著等下載。
+
 設定檔寫浮動 tag（沒有 `@sha256`）時照樣可以執行，但事件記錄會警告，狀態頁與 `diag` 會標示為未鎖定。
 
 每個容器的鎖定狀態有五種：`pinned-ok`（本機 image 與鎖定值相符）、`pinned-mismatch`（不符，記錄 Error）、`unpinned`（浮動 tag，記錄 Warning）、`unverifiable`（以 `docker load` 匯入，沒有 registry digest 可比對，記錄 Warning）、`missing`（尚未下載）。
@@ -110,7 +112,7 @@ sudo /etc/init.d/myapp.sh remove           # 移除容器與網路，資料保�
 
 ```sh
 sha256sum -c SHA256SUMS
-gh attestation verify MyApp_0.2.1_x86_64.qpkg --repo ivanusto/qpkg-template --source-ref refs/tags/v0.2.1
+gh attestation verify MyApp_0.2.2_x86_64.qpkg --repo ivanusto/qpkg-template --source-ref refs/tags/v0.2.2
 ```
 
 `images.lock` 同時附在 release，不必解開 `.qpkg` 就能知道裡面鎖的是哪一個 image。

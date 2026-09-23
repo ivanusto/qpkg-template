@@ -100,6 +100,8 @@ To upgrade:
 2. `scripts/pin-images.sh APP_IMAGE=<repository>:<new tag>` in the repository and release a new QPKG, or override `APP_IMAGE` in the .conf file on the NAS.
 3. `update` or `restart`; only containers whose image or settings changed are recreated.
 
+When `start` or `restart` finds a new pin whose image is not here yet (the usual case right after App Center installs a new version), the existing containers keep running the previous version while the image downloads in the background, and are replaced only once it is complete. The status page is not used in that case. If the download fails, the previous version stays up, the state stays `running`, and a warning is logged. A registry CDN can serve a fresh release at a fraction of its usual speed for hours, so an upgrade must never wait with the app down.
+
 A floating tag (no `@sha256`) in the .conf file still works, but it logs a warning and shows as unpinned on the status page and in `diag`.
 
 Each container has one of five pin states: `pinned-ok` (the local image matches the pin), `pinned-mismatch` (it does not; logged as an error), `unpinned` (floating tag; warning), `unverifiable` (imported with `docker load`, no registry digest to compare; warning), `missing` (not downloaded yet).
@@ -108,7 +110,7 @@ Each container has one of five pin states: `pinned-ok` (the local image matches 
 
 ```sh
 sha256sum -c SHA256SUMS
-gh attestation verify MyApp_0.2.1_x86_64.qpkg --repo ivanusto/qpkg-template --source-ref refs/tags/v0.2.1
+gh attestation verify MyApp_0.2.2_x86_64.qpkg --repo ivanusto/qpkg-template --source-ref refs/tags/v0.2.2
 ```
 
 `images.lock` is attached to the release as well, so you can see which image a package pins without unpacking it.
