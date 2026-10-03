@@ -110,7 +110,7 @@ Each container has one of five pin states: `pinned-ok` (the local image matches 
 
 ```sh
 sha256sum -c SHA256SUMS
-gh attestation verify MyApp_0.2.2_x86_64.qpkg --repo ivanusto/qpkg-template --source-ref refs/tags/v0.2.2
+gh attestation verify MyApp_0.2.3_x86_64.qpkg --repo ivanusto/qpkg-template --source-ref refs/tags/v0.2.3
 ```
 
 `images.lock` is attached to the release as well, so you can see which image a package pins without unpacking it.

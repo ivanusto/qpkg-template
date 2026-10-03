@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.3
+
+- **修正升級時狀態頁可能搶走網頁埠。** App Center 升級時先跑 post-install 的 `bgpull`，再跑 `start`。在 NAS 上 Container Station 忙於安裝，`_bg_pull` 可能晚幾秒才走到開狀態頁的判斷，此時舊容器剛被暫停、`start` 正要以 `KEEP_OLD` 重新啟動它；舊判斷是「web 容器沒在執行就開狀態頁」，於是兩者搶同一個埠。open-webui-ollama-qpkg 2.0.3 實際遇到，App 早約 0.1 秒拿到埠；若狀態頁先綁到，`docker start` 失敗，`do_start` 改走下載路徑，App 停機到新映像下載完。現在改看 web 容器是否存在：存在就只寫 `updating`，交給隨後的啟動讓舊版繼續服務；首次安裝沒有容器，照舊顯示狀態頁。
+- `tests/lifecycle.sh` 的 4b 情境改照 App Center 的順序先跑 `bgpull`，並以可變慢的 docker 包裝讓下載停在進行中，共 76 項。
+
 ## v0.2.2
 
 - **升級時不再停機等下載。** v0.2.1 遇到新的鎖定值時，會先停掉容器、讓狀態頁佔住網頁埠，下載完才重建；下載很慢時 App 就一直停著。open-webui-ollama-qpkg 2.0.1 實際遇到：open-webui v0.11.4 發佈當天 ghcr 只有約 80 KB/s，NAS 停機 25 分鐘。現在既有容器先以舊版繼續服務（`run_container` 的 `KEEP_OLD` 路徑），背景下載完成後以 `RECREATE_RUNNING=1` 替換；下載失敗時維持舊版，狀態仍是 `running`，事件記錄寫警告。
