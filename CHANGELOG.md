@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.5
+
+- 建置工具更新，套件內容與 v0.2.4 相同：GitHub Actions 換到改用 Node 24 的大版本（checkout v7.0.1、upload-artifact v7.0.2、attest-build-provenance v4.2.2、action-gh-release v3.0.3，仍釘 commit SHA），本機建置映像改用 Ubuntu 26.04（以 digest 鎖定）。26.04 建出的 payload 與 22.04 逐檔相同，包含權限與擁有者 uid。
+- 核心 `shared/lib/qpkg-core.sh` 未變更；從 v0.2.4 衍生的 App 不需要同步。
+
 ## v0.2.4
 
 - **修正開機時可能跑到 QTS 的系統 Docker。** `find_docker` 在 Container Station 的 `bin/docker` 不能執行時，會退而使用 `system-docker`，那是 QTS 自己的 daemon（AI 服務中心、LLM Core 等都在上面）。QuTS hero h6.1 開機時，`bin/docker` 是指向 `/lib/container-station/wrapper/` 的符號連結，目標要等 Container Station 啟動後才建立，`system-docker` 卻已經能回應。open-webui-ollama-qpkg 2.1.0 的測試中實際發生：App 把狀態頁、網路與 busybox 建在 `system-docker` 上，`_bg_start` 在等待迴圈裡找不到自己的容器，約 16 分鐘後才進入下載流程。現在只使用 Container Station 的 docker，找不到時回傳失敗，由呼叫端繼續等待；修正後同一台 NAS 開機 62 秒內正常啟動。曾受影響的 NAS 可用 `system-docker ps -a` 檢查是否留有 `*-landing` 容器。
