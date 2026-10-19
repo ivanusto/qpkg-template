@@ -112,7 +112,7 @@ sudo /etc/init.d/myapp.sh remove           # 移除容器與網路，資料保�
 
 ```sh
 sha256sum -c SHA256SUMS
-gh attestation verify MyApp_0.2.3_x86_64.qpkg --repo ivanusto/qpkg-template --source-ref refs/tags/v0.2.3
+gh attestation verify MyApp_0.2.4_x86_64.qpkg --repo ivanusto/qpkg-template --source-ref refs/tags/v0.2.4
 ```
 
 `images.lock` 同時附在 release，不必解開 `.qpkg` 就能知道裡面鎖的是哪一個 image。

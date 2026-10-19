@@ -276,6 +276,21 @@ for S in package docker "registry DNS" images containers network configuration a
 done
 check "diag marks the switched-off container" 'echo "$OUT" | grep -q "^extra: .*disabled"'
 
+echo "== 8b. QTS's system-docker is never used"
+# At boot Container Station's CLI wrapper exists before it works, while
+# QTS's own daemon already answers (seen on QuTS hero h6.1).
+chmod -x "$WORK/cs/bin/docker"
+cat > "$WORK/cs/bin/system-docker" <<EOF
+#!/bin/sh
+touch "$WORK/system-docker-used"
+exec "$REAL_DOCKER" "\$@"
+EOF
+chmod +x "$WORK/cs/bin/system-docker"
+"$APP" diag >/dev/null 2>&1
+check "not picked while Container Station's CLI is unusable" '[ ! -f "$WORK/system-docker-used" ]'
+chmod +x "$WORK/cs/bin/docker"
+rm -f "$WORK/cs/bin/system-docker" "$WORK/system-docker-used"
+
 echo "== 9. stop and remove"
 "$APP" stop 2>/dev/null
 check "stopped" '! "$APP" status >/dev/null'

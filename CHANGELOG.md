@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.2.4
+
+- **修正開機時可能跑到 QTS 的系統 Docker。** `find_docker` 在 Container Station 的 `bin/docker` 不能執行時，會退而使用 `system-docker`，那是 QTS 自己的 daemon（AI 服務中心、LLM Core 等都在上面）。QuTS hero h6.1 開機時，`bin/docker` 是指向 `/lib/container-station/wrapper/` 的符號連結，目標要等 Container Station 啟動後才建立，`system-docker` 卻已經能回應。open-webui-ollama-qpkg 2.1.0 的測試中實際發生：App 把狀態頁、網路與 busybox 建在 `system-docker` 上，`_bg_start` 在等待迴圈裡找不到自己的容器，約 16 分鐘後才進入下載流程。現在只使用 Container Station 的 docker，找不到時回傳失敗，由呼叫端繼續等待；修正後同一台 NAS 開機 62 秒內正常啟動。曾受影響的 NAS 可用 `system-docker ps -a` 檢查是否留有 `*-landing` 容器。
+- `pkg_post_install` 在 `chown -R 0:0` 之後移除群組與其他人的寫入權限。QTS 的 gid 0 是 administrators 群組，以 umask 002 建置的套件會讓所有管理者帳號都能修改以 root 執行的腳本。GitHub runner 的建置原本就是 644／755。
+- `tests/lifecycle.sh` 新增「Container Station 的 CLI 不能執行時不使用 `system-docker`」情境，共 77 項；在 v0.2.3 的核心上這個情境會失敗。
+
 ## v0.2.3
 
 - **修正升級時狀態頁可能搶走網頁埠。** App Center 升級時先跑 post-install 的 `bgpull`，再跑 `start`。在 NAS 上 Container Station 忙於安裝，`_bg_pull` 可能晚幾秒才走到開狀態頁的判斷，此時舊容器剛被暫停、`start` 正要以 `KEEP_OLD` 重新啟動它；舊判斷是「web 容器沒在執行就開狀態頁」，於是兩者搶同一個埠。open-webui-ollama-qpkg 2.0.3 實際遇到，App 早約 0.1 秒拿到埠；若狀態頁先綁到，`docker start` 失敗，`do_start` 改走下載路徑，App 停機到新映像下載完。現在改看 web 容器是否存在：存在就只寫 `updating`，交給隨後的啟動讓舊版繼續服務；首次安裝沒有容器，照舊顯示狀態頁。
