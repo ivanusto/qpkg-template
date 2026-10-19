@@ -125,7 +125,7 @@ The build tools follow the same rule as the app image: never reference a name so
 |---|---|---|
 | GitHub Actions | full commit SHA, version in a comment | Dependabot, weekly PRs |
 | QDK | `QDK_REF`, identical in the workflow and the Dockerfile | by hand, both places |
-| builder base image | `ubuntu:22.04@sha256:...` | Dependabot, weekly PRs |
+| builder base image | `ubuntu:26.04@sha256:...` | Dependabot, weekly PRs |
 | shellcheck image | `SHELLCHECK` in the Makefile with a digest | by hand |
 
 `scripts/check-ci-pins.sh` (part of `make check-pins`) checks all four and fails CI if any of them falls back to a movable reference. On a tag, CI also checks that the tag matches `QPKG_VER` in `qpkg.cfg` and refuses to release otherwise: bump `qpkg.cfg` and the CHANGELOG, commit, then tag.

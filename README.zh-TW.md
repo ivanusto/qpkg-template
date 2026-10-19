@@ -127,7 +127,7 @@ gh attestation verify MyApp_0.2.4_x86_64.qpkg --repo ivanusto/qpkg-template --so
 |---|---|---|
 | GitHub Actions | 完整 commit SHA，註解保留版本號 | Dependabot 每週提 PR |
 | QDK | `QDK_REF`，workflow 與 Dockerfile 必須相同 | 手動改兩處 |
-| builder 基底 image | `ubuntu:22.04@sha256:...` | Dependabot 每週提 PR |
+| builder 基底 image | `ubuntu:26.04@sha256:...` | Dependabot 每週提 PR |
 | shellcheck image | Makefile 的 `SHELLCHECK` 帶 digest | 手動 |
 
 `scripts/check-ci-pins.sh`（包含在 `make check-pins`）檢查以上四項，任一項退回浮動參考就讓 CI 失敗。打 tag 時 CI 另外檢查 tag 與 `qpkg.cfg` 的 `QPKG_VER` 一致，不一致就不發 release：先改 `qpkg.cfg` 與 CHANGELOG、commit，再打 tag。
